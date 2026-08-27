@@ -1,6 +1,6 @@
 QuizBank.registerCourse({
-  "id": "pgde-715-question-bank",
-  "code": "PGDE 715",
+  "id": "pgd-715-question-bank",
+  "code": "PGD 715",
   "title": "Educational Management and Ethics",
   "institution": "Distance Learning Centre, Ahmadu Bello University, Zaria, Nigeria",
   "description": "A comprehensive question bank covering educational management principles, ethics, policy, legal issues, curriculum, finance, record keeping, and human resource development for postgraduate students.",
