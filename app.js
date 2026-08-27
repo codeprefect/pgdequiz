@@ -18,15 +18,20 @@
     shuffleOn: true,
     shuffleOptions: true,
     countChoice: 50,
-    // pause state: can pause up to `maxPauses` times per session
+    // pause state: each session starts with one pause and replenishes after a cooldown
     paused: false,
     pausesUsed: 0,
-    maxPauses: 2,
+    maxPauses: 1,
+    pauseCooldownMs: 10 * 60 * 1000,
+    pauseAvailableAt: 0,
     session: null,
     selection: [], // currently ticked option ids for the active question
     locked: false, // true once current question has been submitted
     timeRemaining: 0,
     timerId: null,
+    sessionTimeLimit: 30,
+    sessionTimeRemaining: 30,
+    sessionTimerId: null,
   };
 
   function el(tag, attrs, children) {
@@ -49,6 +54,20 @@
 
   function clear(node) {
     while (node.firstChild) node.removeChild(node.firstChild);
+  }
+
+  function formatDuration(totalSeconds) {
+    const safeSeconds = Math.max(0, Math.floor(totalSeconds));
+    const hours = Math.floor(safeSeconds / 3600);
+    const minutes = Math.floor((safeSeconds % 3600) / 60);
+    const seconds = safeSeconds % 60;
+
+    const parts = [];
+    if (hours > 0) parts.push(`${hours} hr`);
+    if (minutes > 0 || parts.length > 0) parts.push(`${minutes} min`);
+    if (seconds > 0 || parts.length === 0) parts.push(`${seconds} sec`);
+
+    return parts.join(' ');
   }
 
   // ---------------------------------------------------------------- init
@@ -312,9 +331,14 @@
     // reset pause counters for a fresh session
     state.paused = false;
     state.pausesUsed = 0;
+    state.pauseAvailableAt = 0;
+    state.sessionTimeLimit = (state.session.questions.length || 0) * 30;
+    state.sessionTimeRemaining = state.sessionTimeLimit;
     clearQuestionTimer();
+    clearSessionTimer();
     renderQuiz();
     startQuestionTimer();
+    startSessionTimer();
   }
 
   function currentQuestion() {
@@ -347,6 +371,13 @@
     );
     sheet.appendChild(header);
 
+    const sessionWarning = state.sessionTimeRemaining <= Math.ceil(state.sessionTimeLimit * 0.3);
+    sheet.appendChild(
+      el("div", { class: "session-banner " + (sessionWarning ? "danger" : "") }, [
+        state.paused ? `Session paused · ${formatDuration(state.sessionTimeRemaining)} remaining` : `Session time: ${formatDuration(state.sessionTimeRemaining)} left`,
+      ])
+    );
+
     // progress bar
     const pct = Math.round((session.index / session.questions.length) * 100);
     sheet.appendChild(
@@ -360,8 +391,12 @@
       ])
     );
 
-      // timer display
-      sheet.appendChild(el("div", { class: "countdown" }, [state.paused ? `Paused` : `Time left: ${state.timeRemaining}s`]));
+    const questionWarning = state.timeRemaining <= Math.ceil(40 * 0.5);
+    sheet.appendChild(
+      el("div", { class: "countdown" + (questionWarning ? " warning" : "") }, [
+        state.paused ? `Paused` : `Time left: ${formatDuration(state.timeRemaining)}`,
+      ])
+    );
 
     // attempt hint
     const record = state.session.answers[q.id] || {};
@@ -453,6 +488,7 @@
     }
       // pause control (only when not locked)
       if (!state.locked) {
+        const pauseButtonDisabled = state.paused ? null : (Date.now() < state.pauseAvailableAt ? "disabled" : null);
         actions.appendChild(
           el(
             "button",
@@ -462,9 +498,15 @@
                 if (state.paused) resumeQuiz();
                 else pauseQuiz();
               },
-              disabled: !state.paused && state.pausesUsed >= state.maxPauses ? "disabled" : null,
+              disabled: pauseButtonDisabled,
             },
-            [state.paused ? "Resume" : `Pause (${state.maxPauses - state.pausesUsed} left)`]
+            [
+              state.paused
+                ? "Resume"
+                : Date.now() < state.pauseAvailableAt
+                  ? "Pause (10 min cooldown)"
+                  : "Pause",
+            ]
           )
         );
       }
@@ -477,7 +519,7 @@
         const overlay = el("div", { class: "pause-overlay" }, [
           el("div", { class: "pause-card" }, [
             el("h2", {}, ["Paused"]),
-            el("p", {}, [`Time preserved: ${state.timeRemaining}s`]),
+            el("p", {}, [`Time preserved: ${formatDuration(state.timeRemaining)}`]),
             el(
               "button",
               {
@@ -518,7 +560,33 @@
       } else {
         // update countdown display
         const cd = document.querySelector('.countdown');
-        if (cd) cd.textContent = `Time left: ${state.timeRemaining}s`;
+        if (cd) {
+          const warning = state.timeRemaining <= Math.ceil(40 * 0.5);
+          cd.classList.toggle('warning', warning);
+          cd.textContent = `Time left: ${formatDuration(state.timeRemaining)}`;
+        }
+      }
+    }, 1000);
+  }
+
+  function startSessionTimer(reset = true) {
+    clearSessionTimer();
+    if (reset) state.sessionTimeRemaining = state.sessionTimeLimit;
+    if (state.paused || !state.session) return;
+    state.sessionTimerId = setInterval(() => {
+      state.sessionTimeRemaining -= 1;
+      const sessionBanner = document.querySelector('.session-banner');
+      if (sessionBanner) {
+        const warning = state.sessionTimeRemaining <= Math.ceil(state.sessionTimeLimit * 0.3);
+        sessionBanner.classList.toggle('danger', warning);
+        sessionBanner.textContent = state.paused
+          ? `Session paused · ${formatDuration(state.sessionTimeRemaining)} remaining`
+          : `Session time: ${formatDuration(state.sessionTimeRemaining)} left`;
+      }
+      if (state.sessionTimeRemaining <= 0) {
+        clearSessionTimer();
+        clearQuestionTimer();
+        finishSession();
       }
     }, 1000);
   }
@@ -528,12 +596,18 @@
     startQuestionTimer(false);
   }
 
+  function resumeSessionTimer() {
+    startSessionTimer(false);
+  }
+
   function pauseQuiz() {
     if (state.paused) return;
-    if (state.pausesUsed >= state.maxPauses) return;
+    if (Date.now() < state.pauseAvailableAt) return;
     state.paused = true;
     state.pausesUsed += 1;
+    state.pauseAvailableAt = Date.now() + state.pauseCooldownMs;
     clearQuestionTimer();
+    clearSessionTimer();
     renderQuiz();
   }
 
@@ -542,12 +616,20 @@
     state.paused = false;
     renderQuiz();
     resumeQuestionTimer();
+    resumeSessionTimer();
   }
 
   function clearQuestionTimer() {
     if (state.timerId) {
       clearInterval(state.timerId);
       state.timerId = null;
+    }
+  }
+
+  function clearSessionTimer() {
+    if (state.sessionTimerId) {
+      clearInterval(state.sessionTimerId);
+      state.sessionTimerId = null;
     }
   }
 
@@ -623,6 +705,8 @@
   }
 
   function finishSession() {
+    clearQuestionTimer();
+    clearSessionTimer();
     const session = state.session;
     const score = QuizBank.sessionScore(session);
     const byModule = QuizBank.scoreByModule(session);
