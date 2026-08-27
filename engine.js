@@ -225,10 +225,17 @@
     }
 
     const limited = final.slice(0, desired);
+    // build per-question option order if requested
+    const optionOrder = {};
+    for (const q of limited) {
+      const ids = q.options.map((o) => o.id);
+      optionOrder[String(q.id)] = opts.shuffleOptions ? shuffle(ids) : ids.slice();
+    }
     return {
       questions: limited,
       index: 0,
       answers: {},
+      optionOrder,
       startedAt: Date.now(),
     };
   }

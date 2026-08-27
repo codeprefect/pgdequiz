@@ -16,6 +16,7 @@
     parts: new Set(["A", "B"]),
     feedbackMode: "instant", // "instant" | "exam"
     shuffleOn: true,
+    shuffleOptions: true,
     countChoice: 50,
     session: null,
     selection: [], // currently ticked option ids for the active question
@@ -206,6 +207,22 @@
       ])
     );
     sheet.appendChild(countGroup);
+    // Option shuffle
+    const optGroup = el("div", { class: "field-group" });
+    optGroup.appendChild(el("span", { class: "field-label" }, ["Answer options"]));
+    optGroup.appendChild(
+      el("label", { class: "toggle-row" }, [
+        el("input", {
+          type: "checkbox",
+          checked: state.shuffleOptions ? "checked" : null,
+          onchange: (e) => {
+            state.shuffleOptions = e.target.checked;
+          },
+        }),
+        el("span", {}, ["Shuffle answer options (avoid memorising letters)"]),
+      ])
+    );
+    sheet.appendChild(optGroup);
 
     // pool count + start
     const pool = QuizBank.buildPool(course, {
@@ -280,6 +297,7 @@
     const recent = QuizProgress.getRecentQuestionIds ? QuizProgress.getRecentQuestionIds(state.course.id, 200) : [];
     state.session = QuizBank.createSession(pool, {
       shuffle: opts.isReview ? true : state.shuffleOn,
+      shuffleOptions: state.shuffleOptions,
       limit,
       recentIds: recent,
     });
@@ -345,9 +363,12 @@
 
     sheet.appendChild(el("p", { class: "q-prompt" }, [q.prompt]));
 
-    // options
+    // options (render in session-specific order to support shuffling)
     const optWrap = el("div", { class: "options" });
-    q.options.forEach((opt) => {
+    const order = (session.optionOrder && session.optionOrder[String(q.id)]) || q.options.map((o) => o.id);
+    order.forEach((optId) => {
+      const opt = q.options.find((o) => o.id === optId);
+      if (!opt) return;
       const isSelected = state.selection.includes(opt.id);
       const classes = ["option"];
       if (isSelected) classes.push("selected");
