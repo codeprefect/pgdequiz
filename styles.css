@@ -469,3 +469,23 @@ footer.site-foot {
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; }
 }
+
+/* Pause overlay */
+.pause-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0,0,0,0.35);
+  backdrop-filter: blur(6px);
+  z-index: 1200;
+  padding: 20px;
+}
+.pause-overlay .pause-card {
+  background: var(--paper);
+  padding: 28px;
+  border-radius: 8px;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.35);
+  text-align: center;
+}
