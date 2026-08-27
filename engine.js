@@ -121,7 +121,7 @@
    */
   function createSession(pool, opts) {
     opts = opts || {};
-    const minSessionSize = 50;
+    const minSessionSize = 20;
     let desired = typeof opts.limit === "number" && opts.limit > 0 ? opts.limit : pool.length;
     // enforce minimum but never exceed pool length
     desired = Math.max(desired, minSessionSize);

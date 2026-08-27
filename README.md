@@ -1,86 +1,110 @@
 # Quiz Bank — practice engine
 
-A small, self-contained website for drilling multiple-choice / select-all-that-apply
-question banks. No build step, no server, no dependencies beyond two Google Fonts —
-just open `index.html` in a browser, or host the folder anywhere static files work
-(GitHub Pages, Netlify, a course LMS "files" section, etc).
+A small, self-contained static site for drilling multiple-choice and
+select-all-that-apply question banks. No build step or back-end required —
+just open `index.html` in a browser or host the folder on any static host.
 
-Currently loaded: **PGDE 707 — Educational Psychology** (300 questions, ABU Zaria
-Distance Learning Centre course material).
+Currently included course packs live in `courses/` and are loaded by adding
+their `<script>` tag to `index.html` (see "Adding another course" below).
 
-## How it's put together
+## Project layout
 
 ```
-index.html            shell: loads the pieces below, in order
-engine.js              pure quiz logic (pooling, shuffling, scoring) — no DOM, no content
-progress.js            localStorage wrapper (missed questions, best/last score)
-app.js                 renders the screens and wires clicks to engine.js — no course content
-styles.css             the "exam script" visual theme
-courses/
-  pgde707-educational-psychology.js   the 300-question data file for this course
-  _template.js                        blank copy-me starting point for a new course
+index.html                // page shell + list of course script tags
+engine.js                 // pure quiz logic: pooling, scoring, session builder
+progress.js               // localStorage helpers: missed questions, stats, history
+app.js                    // UI layer: setup, quiz, results, timers
+styles.css                // visual theme and layout
+courses/                  // course packs (register themselves with QuizBank)
+  _template.js            // template for adding new course files
+  pgd707-educational-psychology.js
+  pgd709-education-technology.js
 ```
 
-The split matters: `engine.js` and `app.js` don't know anything about Educational
-Psychology specifically. They just read whatever course objects have been
-registered. That's what makes it reusable.
+The separation keeps course data (large question lists) out of the UI and
+logic files so you can drop in new course files without changing the engine.
 
-## Adding another course
+## How to add a course
 
 1. Copy `courses/_template.js` to `courses/your-course-id.js`.
-2. Fill in `id`, `code`, `title`, `description`, and the `questions` array
-   (schema is documented in the template).
-3. Add one line to `index.html`, next to the existing course script tag:
+2. Fill `id`, `code`, `title`, `description`, and the `questions` array.
+3. Add the course script to `index.html`, e.g.:
    ```html
    <script src="courses/your-course-id.js"></script>
    ```
 4. Reload the page.
 
-If more than one course is registered, the site opens with a course picker.
-With just one, it skips straight to the setup screen.
+When multiple courses are present the app shows a course picker; with one it
+goes straight to the setup screen.
 
-### Converting a question bank you already have (e.g. from a Word doc / PDF)
+### Question shape
 
-The shape each question needs is:
+Each question must follow the template in `_template.js`. Minimal example:
 
 ```js
 {
-  id: 1,               // unique within the course
-  part: "A",           // any short label — used as a filter chip
-  type: "single",       // "single" (1 correct answer) or "multi" (2+)
-  module: "Module 1",   // coarse grouping (filter chip)
-  session: "Session 1a: Topic name", // finer grouping, shown as context
-  prompt: "The question text",
-  options: [{ id: "A", text: "..." }, { id: "B", text: "..." }, ...],
-  correct: ["B"]         // one or more option ids
+  id: 1,
+  part: "A",
+  type: "single", // or "multi"
+  module: "Module 1",
+  session: "Session 1: Topic",
+  prompt: "Question text",
+  options: [{ id: "A", text: "..." }, { id: "B", text: "..." }],
+  correct: ["B"]
 }
 ```
 
-If your source is plain text with a predictable pattern (numbered questions,
-lettered options, an answer key at the end — like the PGDE 707 material was),
-the fastest path is a short script: read the text, regex out question numbers,
-option letters and answer-key pairs, and emit this JSON shape. That's how the
-included course pack was generated.
+## Current features (what the app actually does)
 
-## Features
+- Two attempts per question: the UI allows a second try; the correct answer is
+  revealed only after a correct response or the final (second) failed attempt.
+- 40‑second countdown per question; timeouts count as the final failed attempt
+  and the app automatically advances to the next question.
+- Per‑question attempt hints and themed countdown UI (visible on the quiz
+  screen).
+- Session-length options: 20, 50, 60, 80, 100. The engine will enforce caps
+  and will report the effective session size in the setup footer.
+- Smart session builder: when creating a session the engine attempts to
+  preserve an 80/20 split between part A (MCQ) and part B (SATA), distribute
+  questions across study sessions, and deprioritise recently seen questions to
+  improve coverage.
+- Shuffle option: toggle whether the session pool is shuffled when created.
+- Progress persistence: `localStorage` stores per-course stats (best/last
+  score), a set of missed questions, and a lightweight question history used
+  to avoid repeating recently seen items.
+- The UI shows the active course in the browser tab title.
+- Setup screen includes a "Back to courses" breadcrumb; returning to setup
+  while a quiz runs is intentionally disabled to avoid accidental progress
+  loss.
 
-- Filter by module and by question format before starting a session.
-- Choose session length (10 / 20 / 50 / all) and whether to shuffle.
-- Two feedback modes: instant (see the answer after each question) or exam
-  style (answers revealed only at the end).
-- Results screen with a score breakdown by module and a review list of every
-  question missed.
-- Progress persists in the browser (localStorage): your best/last score per
-  course, and a running set of "missed" questions you can retry in one tap —
-  independent of whatever filters you used originally.
-- Single-select questions render as radio-style options; select-all-that-apply
-  questions render as checkboxes and require every correct option (and no
-  incorrect ones) to count as correct.
+## Notes and behaviour details
 
-## Notes
+- Answers are persisted to the missed set only when the question is answered
+  correctly or after the final failed attempt; first wrong attempts are kept
+  in-session to allow a second try.
+- All logic in `engine.js` is framework-free and testable independently of the
+  UI.
+- Everything runs client-side — no telemetry or data leaves your browser.
 
-- Everything runs client-side; nothing is sent anywhere.
-- Progress is stored per-browser (via `localStorage`), keyed by course `id`.
-  Clearing site data resets it.
-- No frameworks — it's ~500 lines of vanilla JS across engine/progress/app,
-  intentionally kept simple so it's easy to extend.
+## Future improvements (short list — pragmatic to futuristic)
+
+- Adaptive scheduling / spaced‑repetition: prioritise items you get wrong more
+  often and schedule them with increasing intervals.
+- User accounts & sync: optional backend to sync progress across devices.
+- CSV / LMS importers: small utilities to convert Moodle/Blackboard/CSV
+  exports into course files.
+- Item Response Theory (IRT) based scoring and difficulty calibration.
+- Rich analytics dashboard: per‑session trends, weak‑topics heatmap, and
+  exportable performance reports for instructors.
+- AI helpers: generate distractors, paraphrase prompts, or suggest tags and
+  session groupings from raw text.
+- Offline-first mobile packaging: a tiny PWA to enable study without a
+  network and resume syncing when online.
+
+If any of these sound useful I can add a short design doc or implement a low‑
+effort starting point (e.g. CSV importer or basic spaced‑repetition queue).
+
+---
+
+If anything in this README looks out of date for your workflow, tell me what
+you'd like to see and I will update it.

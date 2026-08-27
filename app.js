@@ -120,8 +120,24 @@
     const stats = QuizProgress.getStats(course.id);
 
     clear(root);
-
     const sheet = el("div", { class: "sheet" });
+
+    // breadcrumb: back to course picker
+    const backCrumb = el("div", { class: "breadcrumbs" }, [
+      el(
+        "a",
+        {
+          href: "#",
+          onclick: (e) => {
+            e.preventDefault();
+            state.course = null;
+            renderCoursePicker(QuizBank.listCourses());
+          },
+        },
+        ["\u2190 Back to courses"]
+      ),
+    ]);
+    sheet.appendChild(backCrumb);
     sheet.appendChild(el("span", { class: "eyebrow" }, [course.code]));
     sheet.appendChild(el("h1", { class: "setup-title" }, [course.title]));
     sheet.appendChild(
@@ -161,7 +177,7 @@
     const countGroup = el("div", { class: "field-group" });
     countGroup.appendChild(el("span", { class: "field-label" }, ["Session length"]));
     const countRow = el("div", { class: "count-row" });
-    [50, 60, 80, 100].forEach((n) => {
+    [20, 50, 60, 80, 100].forEach((n) => {
       countRow.appendChild(
         el(
           "button",
@@ -197,8 +213,9 @@
       parts: Array.from(state.parts),
     });
     const footer = el("div", { class: "setup-footer" });
-    // compute effective session size (engine enforces min 50 and caps at pool length)
-    const effectiveSize = Math.min(Math.max(state.countChoice, 50), pool.length);
+    // compute effective session size by asking the engine to build a session
+    const testSession = QuizBank.createSession(pool, { shuffle: false, limit: state.countChoice });
+    const effectiveSize = testSession.questions.length;
     footer.appendChild(
       el("span", { class: "pool-count" }, [
           `${pool.length} question${pool.length === 1 ? "" : "s"} match your filters · Session: ${effectiveSize} questions`,
@@ -284,6 +301,8 @@
     clear(root);
 
     const sheet = el("div", { class: "sheet" });
+
+    // (no breadcrumb here — prevent returning to setup during an active quiz)
 
     // header
     const header = el("div", { class: "quiz-header" });

@@ -306,6 +306,18 @@ p { line-height: 1.55; color: var(--ink); }
   margin-bottom: 14px;
 }
 
+.breadcrumbs {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ink-soft);
+  margin-bottom: 12px;
+}
+.breadcrumbs a {
+  color: var(--focus);
+  text-decoration: none;
+}
+.breadcrumbs a:hover { text-decoration: underline; }
+
 .q-prompt {
   font-family: var(--font-display);
   font-size: clamp(19px, 2.6vw, 22px);
