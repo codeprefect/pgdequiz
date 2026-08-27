@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ABU PGDE Quiz Practice</title>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+  <div class="masthead">
+    <span class="brand"><strong>Quiz Bank</strong> · practice engine</span>
+    <span class="course-tag" id="masthead-tag"></span>
+  </div>
+
+  <main id="app" aria-live="polite"></main>
+
+  <footer class="site-foot">
+    Runs entirely in your browser — no data leaves this page.<br />
+    To add another course, drop a new file in <code>courses/</code> and list it below.
+  </footer>
+
+  <!-- Engine + persistence (course-agnostic) -->
+  <script src="engine.js"></script>
+  <script src="progress.js"></script>
+
+  <!-- Course packs: add more <script> tags here for other subjects -->
+  <script src="courses/pgd707-educational-psychology.js"></script>
+  <script src="courses/pgd709-education-technology.js"></script>
+  <!-- <script src="courses/your-next-course.js"></script> -->
+
+  <!-- UI layer -->
+  <script src="app.js"></script>
+</body>
+</html>
