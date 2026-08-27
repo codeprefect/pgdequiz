@@ -581,10 +581,12 @@
     );
 
     sheet.appendChild(el("h2", { class: "results-title" }, ["Session complete"]));
+    const wrongCount = score.answered - score.right;
     sheet.appendChild(
       el("p", { class: "results-sub" }, [
         `${score.right} of ${score.answered} answered correctly` +
-          (score.answered < score.total ? ` \u00b7 ${score.total - score.answered} left unanswered` : ""),
+          (score.answered < score.total ? ` \u00b7 ${score.total - score.answered} left unanswered` : "") +
+          ` \u00b7 ${wrongCount} incorrect in this session`,
       ])
     );
 
@@ -633,6 +635,7 @@
 
     const actions = el("div", { class: "results-actions" });
     const missedNow = QuizProgress.getMissed(state.course.id);
+    // Button to retry missed questions across all sessions (persistent missed set)
     if (missedNow.size > 0) {
       actions.appendChild(
         el(
@@ -644,7 +647,24 @@
               startQuiz(missedPool, { isReview: true });
             },
           },
-          [`Retry ${missedNow.size} missed question${missedNow.size === 1 ? "" : "s"}`]
+          [`Retry all-time missed (${missedNow.size})`]
+        )
+      );
+    }
+
+    // Button to retry only questions missed in this session
+    if (score.missed && score.missed.length > 0) {
+      actions.appendChild(
+        el(
+          "button",
+          {
+            class: "btn btn-danger-ghost",
+            onclick: () => {
+              const sessionMissedPool = QuizBank.buildPool(state.course, { onlyIds: score.missed });
+              startQuiz(sessionMissedPool, { isReview: true });
+            },
+          },
+          [`Retry session missed (${score.missed.length})`]
         )
       );
     }
