@@ -406,9 +406,9 @@
 
     sheet.appendChild(el("p", { class: "q-prompt" }, [q.prompt]));
 
-    // options (render in session-specific order to support shuffling)
+    // keep the answer list in the original display order while preserving any internal shuffle logic
     const optWrap = el("div", { class: "options" });
-    const order = (session.optionOrder && session.optionOrder[String(q.id)]) || q.options.map((o) => o.id);
+    const order = q.options.map((o) => o.id);
     order.forEach((optId) => {
       const opt = q.options.find((o) => o.id === optId);
       if (!opt) return;
