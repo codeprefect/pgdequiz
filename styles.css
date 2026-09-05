@@ -473,6 +473,19 @@ p { line-height: 1.55; color: var(--ink); }
   padding: 14px 16px;
   background: #fffdf7;
 }
+/* Review mode on-question display */
+.review-correct-block {
+  border: 1px dashed #c9bd9c;
+  border-radius: 6px;
+  padding: 12px 14px;
+  margin-bottom: 16px;
+  background: #f8fff8;
+}
+.review-correct-block .review-correct {
+  font-family: var(--font-mono);
+  color: var(--correct);
+  font-weight: 600;
+}
 .review-item .r-meta { font-family: var(--font-mono); font-size: 11px; color: var(--ink-soft); margin-bottom: 6px; }
 .review-item .r-prompt { font-family: var(--font-display); font-size: 15.5px; margin: 0 0 8px; }
 .review-item .r-answer { font-size: 13.5px; margin: 2px 0; }

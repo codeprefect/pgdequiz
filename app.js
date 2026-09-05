@@ -18,6 +18,7 @@
     shuffleOn: true,
     shuffleOptions: true,
     countChoice: 50,
+    reviewMode: false,
     // pause state: each session starts with one pause and replenishes after a cooldown
     paused: false,
     pausesUsed: 0,
@@ -247,6 +248,23 @@
     );
     sheet.appendChild(optGroup);
 
+    // Review mode toggle
+    const reviewGroup = el("div", { class: "field-group" });
+    reviewGroup.appendChild(el("span", { class: "field-label" }, ["Review mode"]));
+    reviewGroup.appendChild(
+      el("label", { class: "toggle-row" }, [
+        el("input", {
+          type: "checkbox",
+          checked: state.reviewMode ? "checked" : null,
+          onchange: (e) => {
+            state.reviewMode = e.target.checked;
+          },
+        }),
+        el("span", {}, ["Show correct answers alongside each question when starting"]),
+      ])
+    );
+    sheet.appendChild(reviewGroup);
+
     // pool count + start
     const pool = QuizBank.buildPool(course, {
       modules: Array.from(state.modules),
@@ -267,7 +285,7 @@
       {
         class: "btn btn-primary",
         disabled: pool.length === 0 ? "disabled" : null,
-        onclick: () => startQuiz(pool),
+        onclick: () => startQuiz(pool, { isReview: state.reviewMode }),
       },
       ["Start practice \u2192"]
     );
@@ -297,7 +315,7 @@
                   onclick: (e) => {
                     e.preventDefault();
                     const missedPool = QuizBank.buildPool(course, { onlyIds: Array.from(missed) });
-                    startQuiz(missedPool, { isReview: true });
+                    startQuiz(missedPool, { isReview: true, isReviewExplicitAll: true });
                   },
                 },
                 ["retry them now"]
@@ -316,7 +334,10 @@
 
   function startQuiz(pool, opts) {
     opts = opts || {};
-    const limit = opts.isReview ? null : (state.countChoice === "all" ? null : state.countChoice);
+    // By default respect the configured session length even in review mode.
+    // If caller explicitly wants the full set (e.g. retry missed across all),
+    // pass `isReviewExplicitAll: true` in opts to override and use the full pool.
+    const limit = opts.isReview && opts.isReviewExplicitAll ? null : (state.countChoice === "all" ? null : state.countChoice);
     // fetch recent question ids to deprioritize recently seen
     const recent = QuizProgress.getRecentQuestionIds ? QuizProgress.getRecentQuestionIds(state.course.id, 200) : [];
     state.session = QuizBank.createSession(pool, {
@@ -327,7 +348,8 @@
     });
     state.session.isReview = !!opts.isReview;
     state.selection = [];
-    state.locked = false;
+    // In review mode we show answers and do not allow submission/time-based flow
+    state.locked = !!opts.isReview;
     // reset pause counters for a fresh session
     state.paused = false;
     state.pausesUsed = 0;
@@ -337,8 +359,11 @@
     clearQuestionTimer();
     clearSessionTimer();
     renderQuiz();
-    startQuestionTimer();
-    startSessionTimer();
+    // Don't start timers for review sessions
+    if (!opts.isReview) {
+      startQuestionTimer();
+      startSessionTimer();
+    }
   }
 
   function currentQuestion() {
@@ -347,7 +372,16 @@
 
   function renderQuiz() {
     const session = state.session;
-    const q = currentQuestion();
+    if (!session || !Array.isArray(session.questions) || session.questions.length === 0) {
+      clear(root);
+      root.appendChild(el("div", { class: "sheet" }, [el("p", { class: "empty-state" }, ["No questions in this session."])]));
+      return;
+    }
+    if (session.index >= session.questions.length) {
+      finishSession();
+      return;
+    }
+    const q = session.questions[session.index];
     clear(root);
 
     const sheet = el("div", { class: "sheet" });
@@ -371,12 +405,14 @@
     );
     sheet.appendChild(header);
 
-    const sessionWarning = state.sessionTimeRemaining <= Math.ceil(state.sessionTimeLimit * 0.3);
-    sheet.appendChild(
-      el("div", { class: "session-banner " + (sessionWarning ? "danger" : "") }, [
-        state.paused ? `Session paused · ${formatDuration(state.sessionTimeRemaining)} remaining` : `Session time: ${formatDuration(state.sessionTimeRemaining)} left`,
-      ])
-    );
+    if (!session.isReview) {
+      const sessionWarning = state.sessionTimeRemaining <= Math.ceil(state.sessionTimeLimit * 0.3);
+      sheet.appendChild(
+        el("div", { class: "session-banner " + (sessionWarning ? "danger" : "") }, [
+          state.paused ? `Session paused · ${formatDuration(state.sessionTimeRemaining)} remaining` : `Session time: ${formatDuration(state.sessionTimeRemaining)} left`,
+        ])
+      );
+    }
 
     // progress bar
     const pct = Math.round((session.index / session.questions.length) * 100);
@@ -391,20 +427,38 @@
       ])
     );
 
-    const questionWarning = state.timeRemaining <= Math.ceil(40 * 0.5);
-    sheet.appendChild(
-      el("div", { class: "countdown" + (questionWarning ? " warning" : "") }, [
-        state.paused ? `Paused` : `Time left: ${formatDuration(state.timeRemaining)}`,
-      ])
-    );
+    if (!session.isReview) {
+      const questionWarning = state.timeRemaining <= Math.ceil(40 * 0.5);
+      sheet.appendChild(
+        el("div", { class: "countdown" + (questionWarning ? " warning" : "") }, [
+          state.paused ? `Paused` : `Time left: ${formatDuration(state.timeRemaining)}`,
+        ])
+      );
+    }
 
-    // attempt hint
-    const record = state.session.answers[q.id] || {};
-    const attemptsSoFar = record.attempts || 0;
-    const attemptText = attemptsSoFar >= 1 ? `Attempt ${attemptsSoFar + 1} of 2` : `Attempt 1 of 2`;
-    sheet.appendChild(el("div", { class: "attempt-hint" }, [attemptText]));
+    // attempt hint (not used in review mode)
+    if (!session.isReview) {
+      const record = state.session.answers[q.id] || {};
+      const attemptsSoFar = record.attempts || 0;
+      const attemptText = attemptsSoFar >= 1 ? `Attempt ${attemptsSoFar + 1} of 2` : `Attempt 1 of 2`;
+      sheet.appendChild(el("div", { class: "attempt-hint" }, [attemptText]));
+    }
 
     sheet.appendChild(el("p", { class: "q-prompt" }, [q.prompt]));
+
+    // Review mode: show correct answer(s) prominently and disable selection
+    if (session.isReview) {
+      sheet.appendChild(
+        el("div", { class: "review-correct-block" }, [
+          el("span", { class: "field-label" }, ["Review mode"]),
+          el(
+            "p",
+            { class: "review-correct" },
+            ["Correct answer: " + q.correct.map((id) => optionText(q, id)).join(" | ")]
+          ),
+        ])
+      );
+    }
 
     // keep the answer list in the original display order while preserving any internal shuffle logic
     const optWrap = el("div", { class: "options" });
@@ -412,6 +466,8 @@
     order.forEach((optId) => {
       const opt = q.options.find((o) => o.id === optId);
       if (!opt) return;
+      // In review mode hide incorrect options
+      if (session.isReview && !q.correct.includes(opt.id)) return;
       const isSelected = state.selection.includes(opt.id);
       const classes = ["option"];
       if (isSelected) classes.push("selected");
@@ -427,7 +483,7 @@
           {
             class: classes.join(" "),
             onclick: () => {
-              if (state.locked) return;
+              if (state.locked || session.isReview) return;
               toggleOption(q, opt.id);
             },
           },
@@ -439,7 +495,7 @@
 
     // feedback banner (instant mode, after lock)
     if (state.locked && state.feedbackMode === "instant") {
-      const record = session.answers[q.id];
+      const record = session.answers[q.id] || {};
       const banner = el("div", { class: "feedback-banner " + (record.correct ? "correct" : "wrong") }, [
         record.correct ? "Correct." : `Not quite. Correct answer: ${q.correct.join(", ")}.`,
       ]);
@@ -448,32 +504,7 @@
 
     // actions
     const actions = el("div", { class: "quiz-actions" });
-    actions.appendChild(
-      el(
-        "button",
-        {
-          class: "btn btn-ghost",
-          onclick: () => {
-            if (confirm("End this session now and see your results so far?")) finishSession();
-          },
-        },
-        ["End session"]
-      )
-    );
-
-    if (!state.locked) {
-      actions.appendChild(
-        el(
-          "button",
-          {
-            class: "btn btn-primary",
-            disabled: state.selection.length === 0 ? "disabled" : null,
-            onclick: () => submitAnswer(q),
-          },
-          ["Submit"]
-        )
-      );
-    } else {
+    if (session.isReview) {
       const isLast = session.index === session.questions.length - 1;
       actions.appendChild(
         el(
@@ -485,7 +516,45 @@
           [isLast ? "See results \u2192" : "Next question \u2192"]
         )
       );
-    }
+    } else {
+      actions.appendChild(
+        el(
+          "button",
+          {
+            class: "btn btn-ghost",
+            onclick: () => {
+              if (confirm("End this session now and see your results so far?")) finishSession();
+            },
+          },
+          ["End session"]
+        )
+      );
+
+      if (!state.locked) {
+        actions.appendChild(
+          el(
+            "button",
+            {
+              class: "btn btn-primary",
+              disabled: state.selection.length === 0 ? "disabled" : null,
+              onclick: () => submitAnswer(q),
+            },
+            ["Submit"]
+          )
+        );
+      } else {
+        const isLast = session.index === session.questions.length - 1;
+        actions.appendChild(
+          el(
+            "button",
+            {
+              class: "btn btn-primary",
+              onclick: () => (isLast ? finishSession() : nextQuestion()),
+            },
+            [isLast ? "See results \u2192" : "Next question \u2192"]
+          )
+        );
+      }
       // pause control (only when not locked)
       if (!state.locked) {
         const pauseButtonDisabled = state.paused ? null : (Date.now() < state.pauseAvailableAt ? "disabled" : null);
@@ -510,6 +579,7 @@
           )
         );
       }
+    }
     sheet.appendChild(actions);
 
     root.appendChild(sheet);
@@ -687,14 +757,15 @@
   function nextQuestion() {
     state.session.index += 1;
     state.selection = [];
-    state.locked = false;
+    // Keep review sessions locked (answers visible) and skip timers
+    state.locked = state.session.isReview ? true : false;
     clearQuestionTimer();
     if (state.session.index >= state.session.questions.length) {
       finishSession();
       return;
     }
     renderQuiz();
-    startQuestionTimer();
+    if (!state.session.isReview) startQuestionTimer();
   }
 
   // ----------------------------------------------------------- results
@@ -793,9 +864,9 @@
           "button",
           {
             class: "btn btn-danger-ghost",
-            onclick: () => {
+              onclick: () => {
               const missedPool = QuizBank.buildPool(state.course, { onlyIds: Array.from(missedNow) });
-              startQuiz(missedPool, { isReview: true });
+              startQuiz(missedPool, { isReview: true, isReviewExplicitAll: true });
             },
           },
           [`Retry all-time missed (${missedNow.size})`]
@@ -810,9 +881,9 @@
           "button",
           {
             class: "btn btn-danger-ghost",
-            onclick: () => {
+              onclick: () => {
               const sessionMissedPool = QuizBank.buildPool(state.course, { onlyIds: score.missed });
-              startQuiz(sessionMissedPool, { isReview: true });
+              startQuiz(sessionMissedPool, { isReview: true, isReviewExplicitAll: true });
             },
           },
           [`Retry session missed (${score.missed.length})`]
