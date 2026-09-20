@@ -460,10 +460,10 @@
       );
     }
 
-    // keep the answer list in the original display order while preserving any internal shuffle logic
+    // options (render in session-specific shuffled order)
     const optWrap = el("div", { class: "options" });
-    const order = q.options.map((o) => o.id);
-    order.forEach((optId) => {
+    const order = (session.optionOrder && session.optionOrder[String(q.id)]) || q.options.map((o) => o.id);
+    order.forEach((optId, index) => {
       const opt = q.options.find((o) => o.id === optId);
       if (!opt) return;
       // In review mode hide incorrect options
@@ -477,6 +477,7 @@
         if (isCorrectOpt) classes.push("reveal-correct");
         else if (isSelected) classes.push("reveal-wrong");
       }
+      const displayMark = session.isReview ? opt.id : String.fromCharCode(65 + index);
       optWrap.appendChild(
         el(
           "button",
@@ -487,7 +488,7 @@
               toggleOption(q, opt.id);
             },
           },
-          [el("span", { class: "mark" }, [opt.id]), el("span", {}, [opt.text])]
+          [el("span", { class: "mark" }, [displayMark]), el("span", {}, [opt.text])]
         )
       );
     });
@@ -496,8 +497,9 @@
     // feedback banner (instant mode, after lock)
     if (state.locked && state.feedbackMode === "instant") {
       const record = session.answers[q.id] || {};
+      const correctDisplay = q.correct.map((id) => getDisplayMark(q, id, session)).join(", ");
       const banner = el("div", { class: "feedback-banner " + (record.correct ? "correct" : "wrong") }, [
-        record.correct ? "Correct." : `Not quite. Correct answer: ${q.correct.join(", ")}.`,
+        record.correct ? "Correct." : `Not quite. Correct answer: ${correctDisplay}.`,
       ]);
       sheet.appendChild(banner);
     }
@@ -770,9 +772,19 @@
 
   // ----------------------------------------------------------- results
 
-  function optionText(q, id) {
+  function getDisplayMark(q, optId, session) {
+    session = session || state.session;
+    if (session && session.isReview) return optId;
+    const order = (session && session.optionOrder && session.optionOrder[String(q.id)]) || q.options.map((o) => o.id);
+    const idx = order.indexOf(optId);
+    return idx >= 0 ? String.fromCharCode(65 + idx) : optId;
+  }
+
+  function optionText(q, id, session) {
     const o = q.options.find((o) => o.id === id);
-    return o ? `${o.id}. ${o.text}` : id;
+    if (!o) return id;
+    const mark = getDisplayMark(q, id, session);
+    return `${mark}. ${o.text}`;
   }
 
   function finishSession() {

@@ -114,27 +114,31 @@
 
   /** Build a fresh session object for a pool of questions.
    *  Features:
-   *   - target minimum session length (defaults to opts.limit or pool.length, minimum 50)
-   *   - aims for an 80/20 split between part A (MCQ) and part B (SATA)
-   *   - distributes selection evenly across study sessions (round-robin)
+   *   - target session length (defaults to opts.limit or pool.length)
+   *   - distributes selection evenly across the entire question pool (stratified sampling)
    *   - deprioritizes recently seen questions when `opts.recentIds` supplied
+   *   - respects `opts.shuffle` for question order
+   *   - per-question option order with positional option preservation
    */
   function createSession(pool, opts) {
     opts = opts || {};
-    const minSessionSize = 20;
     let desired = typeof opts.limit === "number" && opts.limit > 0 ? opts.limit : pool.length;
-    // enforce minimum but never exceed pool length
-    desired = Math.max(desired, minSessionSize);
     desired = Math.min(desired, pool.length);
 
-    // split pool by part
-    const poolA = pool.filter((q) => q.part === "A");
-    const poolB = pool.filter((q) => q.part === "B");
+    if (pool.length === 0 || desired <= 0) {
+      return {
+        questions: [],
+        index: 0,
+        answers: {},
+        optionOrder: {},
+        startedAt: Date.now(),
+      };
+    }
 
-    const targetA = Math.min(poolA.length, Math.round(desired * 0.8));
-    const targetB = Math.min(poolB.length, desired - targetA);
+    // Sort questions by ID to maintain a consistent linear spectrum of the curriculum
+    const sorted = pool.slice().sort((a, b) => a.id - b.id);
 
-    // build recent-rank map (lower = more recent). opts.recentIds expected most-recent-first
+    // Build recent-rank map (lower = more recent). opts.recentIds expected most-recent-first
     const recentRank = {};
     if (Array.isArray(opts.recentIds)) {
       opts.recentIds.forEach((id, i) => {
@@ -142,94 +146,52 @@
       });
     }
 
-    function pickFromPart(partPool, target) {
-      if (partPool.length === 0 || target <= 0) return [];
-      // group by session label
-      const bySession = {};
-      partPool.forEach((q) => {
-        bySession[q.session] = bySession[q.session] || [];
-        bySession[q.session].push(q);
-      });
-      const sessions = Object.keys(bySession);
-      // within each session, sort to deprioritize recently seen
-      sessions.forEach((s) => {
-        bySession[s].sort((a, b) => {
-          const ra = recentRank[String(a.id)] !== undefined ? recentRank[String(a.id)] : Infinity;
-          const rb = recentRank[String(b.id)] !== undefined ? recentRank[String(b.id)] : Infinity;
-          if (ra === rb) return Math.random() - 0.5; // shuffle tie
-          return ra - rb; // smaller index = more recent -> keep later; we'll reverse order below
-        });
-        // reverse so that least-recent (undefined/Infinity) come first
-        bySession[s].reverse();
-      });
+    let selected = [];
+    if (desired >= sorted.length) {
+      selected = sorted.slice();
+    } else {
+      // Stratified sampling: divide the pool into `desired` equal strata across the question range
+      // so questions are evenly distributed from beginning to end (e.g. 1-100, 101-200, ..., 401-500)
+      for (let k = 0; k < desired; k++) {
+        const start = Math.floor((k * sorted.length) / desired);
+        const end = Math.floor(((k + 1) * sorted.length) / desired);
+        const segment = sorted.slice(start, end);
 
-      const selected = [];
-      let i = 0;
-      while (selected.length < target) {
-        const s = sessions[i % sessions.length];
-        const bucket = bySession[s];
-        if (bucket && bucket.length > 0) {
-          // pick next from front
-          selected.push(bucket.shift());
+        // Within this segment, pick the least recently seen question (highest rank, Infinity = never seen)
+        let maxRank = -1;
+        let candidates = [];
+        for (let idx = 0; idx < segment.length; idx++) {
+          const q = segment[idx];
+          const rank = recentRank[String(q.id)] !== undefined ? recentRank[String(q.id)] : Infinity;
+          if (rank > maxRank) {
+            maxRank = rank;
+            candidates = [q];
+          } else if (rank === maxRank) {
+            candidates.push(q);
+          }
         }
-        i++;
-        // if we've cycled and none left, break
-        if (i > sessions.length * 100) break;
-      }
-
-      // if still short (not enough unique questions), fill by sampling pool (allow repeats)
-      while (selected.length < target) {
-        const candidate = partPool[Math.floor(Math.random() * partPool.length)];
-        selected.push(candidate);
-      }
-      return selected;
-    }
-
-    const chosenA = pickFromPart(poolA, targetA);
-    const chosenB = pickFromPart(poolB, targetB);
-
-    // combine, interleaving to preserve part-ratio across session
-    const combined = [];
-    let ia = 0,
-      ib = 0;
-    while (combined.length < desired) {
-      if (combined.length % 5 < 4) {
-        // prefer A for 80/20 (4 of 5 slots)
-        if (ia < chosenA.length) combined.push(chosenA[ia++]);
-        else if (ib < chosenB.length) combined.push(chosenB[ib++]);
-        else break;
-      } else {
-        if (ib < chosenB.length) combined.push(chosenB[ib++]);
-        else if (ia < chosenA.length) combined.push(chosenA[ia++]);
-        else break;
-      }
-      if (ia >= chosenA.length && ib >= chosenB.length) break;
-    }
-
-    // if still short, append more from pool (respect shuffle flag)
-    const remainderPool = opts.shuffle ? shuffle(pool) : pool.slice();
-    let ridx = 0;
-    while (combined.length < desired && remainderPool.length > 0) {
-      combined.push(remainderPool[ridx % remainderPool.length]);
-      ridx++;
-    }
-
-    // final pass: if shuffle option is on, shuffle while trying to avoid immediate repeats
-    let final = opts.shuffle ? shuffle(combined) : combined.slice();
-    for (let k = 1; k < final.length; k++) {
-      if (final[k].id === final[k - 1].id) {
-        // swap with random other
-        const j = Math.min(final.length - 1, k + 1 + Math.floor(Math.random() * 5));
-        [final[k], final[j]] = [final[j], final[k]];
+        const chosen = candidates[Math.floor(Math.random() * candidates.length)];
+        selected.push(chosen);
       }
     }
 
-    const limited = final.slice(0, desired);
+    const limited = opts.shuffle ? shuffle(selected) : selected;
     // build per-question option order if requested
     const optionOrder = {};
     for (const q of limited) {
       const ids = q.options.map((o) => o.id);
-      optionOrder[String(q.id)] = opts.shuffleOptions ? shuffle(ids) : ids.slice();
+      if (!opts.shuffleOptions) {
+        optionOrder[String(q.id)] = ids.slice();
+      } else {
+        const lastOpt = q.options[q.options.length - 1];
+        const isPositional = lastOpt && /^(all|none) of the above/i.test((lastOpt.text || "").trim());
+        if (isPositional) {
+          const front = ids.slice(0, -1);
+          optionOrder[String(q.id)] = shuffle(front).concat(ids.slice(-1));
+        } else {
+          optionOrder[String(q.id)] = shuffle(ids);
+        }
+      }
     }
     return {
       questions: limited,
