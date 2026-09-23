@@ -17,7 +17,8 @@
     feedbackMode: "instant", // "instant" | "exam"
     shuffleOn: true,
     shuffleOptions: true,
-    countChoice: 50,
+    countChoice: 50, // 20 | 50 | 60 | 80 | 100 | "all" | "custom"
+    customCount: 30, // arbitrary question length in increments of 10
     reviewMode: false,
     // pause state: each session starts with one pause and replenishes after a cooldown
     paused: false,
@@ -69,6 +70,16 @@
     if (seconds > 0 || parts.length === 0) parts.push(`${seconds} sec`);
 
     return parts.join(' ');
+  }
+
+  function getSessionLimit() {
+    if (state.countChoice === "all") return null;
+    if (state.countChoice === "custom") {
+      let count = parseInt(state.customCount, 10);
+      if (isNaN(count) || count < 10) count = 10;
+      return Math.max(10, Math.round(count / 10) * 10);
+    }
+    return state.countChoice;
   }
 
   // ---------------------------------------------------------------- init
@@ -143,6 +154,10 @@
     const modules = QuizBank.getModules(course);
     const missed = QuizProgress.getMissed(course.id);
     const stats = QuizProgress.getStats(course.id);
+    const pool = QuizBank.buildPool(course, {
+      modules: Array.from(state.modules),
+      parts: Array.from(state.parts),
+    });
 
     clear(root);
     const sheet = el("div", { class: "sheet" });
@@ -202,22 +217,144 @@
     const countGroup = el("div", { class: "field-group" });
     countGroup.appendChild(el("span", { class: "field-label" }, ["Session length"]));
     const countRow = el("div", { class: "count-row" });
-    [20, 50, 60, 80, 100, "all"].forEach((n) => {
+    [20, 50, 60, 80, 100, "all", "custom"].forEach((n) => {
+      let label;
+      if (n === "all") label = "All";
+      else if (n === "custom") label = "Custom";
+      else label = String(n);
+
       countRow.appendChild(
         el(
           "button",
           {
+            type: "button",
             class: "chip" + (state.countChoice === n ? " active" : ""),
             onclick: () => {
               state.countChoice = n;
               renderSetup();
+              if (n === "custom") {
+                const input = document.getElementById("custom-count-input");
+                if (input) {
+                  input.focus();
+                  input.select();
+                }
+              }
             },
           },
-          [n === "all" ? "All" : String(n)]
+          [label]
         )
       );
     });
     countGroup.appendChild(countRow);
+
+    const poolCountSpan = el("span", { class: "pool-count" });
+    function updateEffectiveSessionInfo() {
+      const testLimit = getSessionLimit();
+      const testSession = QuizBank.createSession(pool, { shuffle: false, limit: testLimit });
+      const effectiveSize = testSession.questions.length;
+      poolCountSpan.textContent = `${pool.length} question${pool.length === 1 ? "" : "s"} match your filters · Session: ${effectiveSize} questions`;
+    }
+
+    if (state.countChoice === "custom") {
+      const customRow = el("div", { class: "custom-count-row" });
+      customRow.appendChild(el("span", { class: "custom-count-label" }, ["Questions:"]));
+
+      const stepper = el("div", { class: "stepper" });
+      const decBtn = el(
+        "button",
+        {
+          type: "button",
+          class: "stepper-btn",
+          "aria-label": "Decrease by 10",
+          onclick: () => {
+            const current = parseInt(state.customCount, 10) || 10;
+            const next = Math.max(10, current - 10);
+            updateCustomVal(next);
+          },
+        },
+        ["\u221210"]
+      );
+
+      const customInput = el("input", {
+        type: "number",
+        id: "custom-count-input",
+        class: "stepper-input",
+        min: "10",
+        step: "10",
+        value: String(state.customCount),
+        "aria-label": "Custom session question count in increments of 10",
+        oninput: (e) => {
+          const val = parseInt(e.target.value, 10);
+          if (!isNaN(val) && val > 0) {
+            state.customCount = val;
+            updateEffectiveSessionInfo();
+            updateStepperButtons();
+          }
+        },
+        onchange: (e) => {
+          let val = parseInt(e.target.value, 10);
+          if (isNaN(val) || val < 10) val = 10;
+          val = Math.max(10, Math.round(val / 10) * 10);
+          updateCustomVal(val);
+        },
+        onblur: (e) => {
+          let val = parseInt(e.target.value, 10);
+          if (isNaN(val) || val < 10) val = 10;
+          val = Math.max(10, Math.round(val / 10) * 10);
+          updateCustomVal(val);
+        },
+        onkeydown: (e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            customInput.blur();
+          }
+        },
+      });
+
+      const incBtn = el(
+        "button",
+        {
+          type: "button",
+          class: "stepper-btn",
+          "aria-label": "Increase by 10",
+          onclick: () => {
+            const current = parseInt(state.customCount, 10) || 10;
+            const next = current + 10;
+            updateCustomVal(next);
+          },
+        },
+        ["+10"]
+      );
+
+      function updateStepperButtons() {
+        if ((parseInt(state.customCount, 10) || 10) <= 10) {
+          decBtn.setAttribute("disabled", "disabled");
+        } else {
+          decBtn.removeAttribute("disabled");
+        }
+      }
+
+      function updateCustomVal(val) {
+        state.customCount = val;
+        customInput.value = String(val);
+        updateStepperButtons();
+        updateEffectiveSessionInfo();
+      }
+
+      updateStepperButtons();
+
+      stepper.appendChild(decBtn);
+      stepper.appendChild(customInput);
+      stepper.appendChild(incBtn);
+      customRow.appendChild(stepper);
+
+      customRow.appendChild(
+        el("span", { class: "custom-count-hint" }, ["(increments of 10)"])
+      );
+
+      countGroup.appendChild(customRow);
+    }
+
     countGroup.appendChild(
       el("label", { class: "toggle-row", style: "margin-top:12px;" }, [
         el("input", {
@@ -266,20 +403,9 @@
     sheet.appendChild(reviewGroup);
 
     // pool count + start
-    const pool = QuizBank.buildPool(course, {
-      modules: Array.from(state.modules),
-      parts: Array.from(state.parts),
-    });
     const footer = el("div", { class: "setup-footer" });
-    // compute effective session size by asking the engine to build a session
-    const testLimit = state.countChoice === "all" ? null : state.countChoice;
-    const testSession = QuizBank.createSession(pool, { shuffle: false, limit: testLimit });
-    const effectiveSize = testSession.questions.length;
-    footer.appendChild(
-      el("span", { class: "pool-count" }, [
-          `${pool.length} question${pool.length === 1 ? "" : "s"} match your filters · Session: ${effectiveSize} questions`,
-      ])
-    );
+    updateEffectiveSessionInfo();
+    footer.appendChild(poolCountSpan);
     const startBtn = el(
       "button",
       {
@@ -337,7 +463,7 @@
     // By default respect the configured session length even in review mode.
     // If caller explicitly wants the full set (e.g. retry missed across all),
     // pass `isReviewExplicitAll: true` in opts to override and use the full pool.
-    const limit = opts.isReview && opts.isReviewExplicitAll ? null : (state.countChoice === "all" ? null : state.countChoice);
+    const limit = opts.isReview && opts.isReviewExplicitAll ? null : getSessionLimit();
     // fetch recent question ids to deprioritize recently seen
     const recent = QuizProgress.getRecentQuestionIds ? QuizProgress.getRecentQuestionIds(state.course.id, 200) : [];
     state.session = QuizBank.createSession(pool, {

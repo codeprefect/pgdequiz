@@ -172,6 +172,97 @@ p { line-height: 1.55; color: var(--ink); }
 
 .count-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 
+/* Custom question count stepper */
+.custom-count-row {
+  margin-top: 14px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 14px;
+  background: rgba(201, 189, 156, 0.15);
+  border: 1px dashed #c9bd9c;
+  border-radius: 6px;
+  width: fit-content;
+  max-width: 100%;
+}
+
+.custom-count-label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-soft);
+}
+
+.stepper {
+  display: inline-flex;
+  align-items: stretch;
+  border: 1px solid #c9bd9c;
+  border-radius: 4px;
+  background: var(--paper);
+  overflow: hidden;
+}
+
+.stepper-btn {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 600;
+  padding: 6px 12px;
+  background: transparent;
+  border: none;
+  color: var(--ink);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+  user-select: none;
+}
+
+.stepper-btn:hover:not(:disabled) {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.stepper-btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.stepper-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.stepper-input {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 600;
+  width: 64px;
+  text-align: center;
+  border: none;
+  border-left: 1px solid #c9bd9c;
+  border-right: 1px solid #c9bd9c;
+  background: transparent;
+  color: var(--ink);
+  padding: 6px 4px;
+  -moz-appearance: textfield;
+}
+
+.stepper-input::-webkit-outer-spin-button,
+.stepper-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.stepper-input:focus {
+  outline: 2px solid var(--focus);
+  outline-offset: -1px;
+}
+
+.custom-count-hint {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-soft);
+}
+
 .toggle-row {
   display: flex;
   align-items: center;
