@@ -231,6 +231,168 @@
     return byModule;
   }
 
+  /**
+   * Helper to extract lowercase whole words from a text string.
+   */
+  function extractWords(str) {
+    if (!str || typeof str !== "string") return [];
+    // Normalize punctuation, convert to lowercase, match word tokens
+    const normalized = str.toLowerCase().replace(/[^\p{L}\p{N}\s]+/gu, " ");
+    return normalized.trim().split(/\s+/).filter((w) => w.length > 0);
+  }
+
+  /**
+   * Pre-index a course's questions for fast searching.
+   * Caches the indexed question data on course._searchIndex.
+   */
+  function indexCourseQuestions(course) {
+    if (!course || !Array.isArray(course.questions)) return [];
+    if (course._searchIndex) return course._searchIndex;
+
+    const indexed = course.questions.map((q) => {
+      const correctIds = Array.isArray(q.correct) ? q.correct : [q.correct];
+      const correctOpts = (q.options || []).filter((o) => correctIds.includes(o.id));
+      const correctAnswerText = correctOpts.map((o) => o.text || "").join(" ");
+
+      const promptWords = extractWords(q.prompt || "");
+      const answerWords = extractWords(correctAnswerText);
+      const allWords = promptWords.concat(answerWords);
+      const wordSet = new Set(allWords);
+      const fullText = `${q.prompt || ""} ${correctAnswerText}`.toLowerCase();
+
+      return {
+        question: q,
+        promptWords,
+        answerWords,
+        allWords,
+        wordSet,
+        wordCount: allWords.length,
+        fullText,
+        correctAnswerText,
+      };
+    });
+
+    course._searchIndex = indexed;
+    return indexed;
+  }
+
+  /**
+   * Search within a course's questions.
+   * Acceptance criteria:
+   * 1. Search ahead with at least three whole words.
+   * 2. Include correct answer in search parameter.
+   * 3. Rate order:
+   *    i. Questions with same set/sum of words as search words rate highest.
+   *    ii. Questions with higher matching words rate higher than lower matching words.
+   * 6. Highly performant.
+   *
+   * Returns: { query, words, results, needsMoreWords, totalMatches }
+   */
+  function searchCourse(course, query) {
+    const rawQuery = (query || "").trim();
+    const queryWords = extractWords(rawQuery);
+
+    // Criteria 1: at least three whole words required
+    if (queryWords.length < 3) {
+      return {
+        query: rawQuery,
+        words: queryWords,
+        results: [],
+        needsMoreWords: true,
+        totalMatches: 0,
+      };
+    }
+
+    const uniqueQueryWords = Array.from(new Set(queryWords));
+    const indexed = indexCourseQuestions(course);
+    const searchWordsCount = uniqueQueryWords.length;
+    const cleanPhrase = queryWords.join(" ");
+
+    const matches = [];
+
+    for (let i = 0; i < indexed.length; i++) {
+      const item = indexed[i];
+      const qWordSet = item.wordSet;
+
+      // Count matching search words
+      const matchedWords = [];
+      for (let j = 0; j < searchWordsCount; j++) {
+        const w = uniqueQueryWords[j];
+        if (qWordSet.has(w)) {
+          matchedWords.push(w);
+        }
+      }
+
+      const matchCount = matchedWords.length;
+      if (matchCount === 0) continue;
+
+      // Check if question contains the exact set of search words
+      const isExactSet = matchCount === searchWordsCount;
+      const isPhraseMatch = item.fullText.includes(cleanPhrase);
+      // Word count difference / density
+      const wordDensity = matchCount / (item.wordCount || 1);
+      const isSameWordCount = item.wordCount === queryWords.length;
+
+      matches.push({
+        question: item.question,
+        correctAnswerText: item.correctAnswerText,
+        matchedWords,
+        matchCount,
+        isExactSet,
+        isPhraseMatch,
+        isSameWordCount,
+        wordDensity,
+        totalWords: item.wordCount,
+      });
+    }
+
+    // Sort according to Criterion 3:
+    // i. Questions with the same set/sum of words as the search words rate highest
+    // ii. Questions with higher matching words rate higher than questions with lower matching words
+    matches.sort((a, b) => {
+      // 1. Same set of search words (all search words matched) rates highest
+      if (a.isExactSet !== b.isExactSet) {
+        return a.isExactSet ? -1 : 1;
+      }
+
+      // If both are exact set, exact phrase match gets priority
+      if (a.isExactSet && b.isExactSet) {
+        if (a.isPhraseMatch !== b.isPhraseMatch) {
+          return a.isPhraseMatch ? -1 : 1;
+        }
+        if (a.isSameWordCount !== b.isSameWordCount) {
+          return a.isSameWordCount ? -1 : 1;
+        }
+      }
+
+      // 2. Higher matching words rate higher than lower matching words
+      if (a.matchCount !== b.matchCount) {
+        return b.matchCount - a.matchCount;
+      }
+
+      // 3. Exact phrase match if not all words matched
+      if (a.isPhraseMatch !== b.isPhraseMatch) {
+        return a.isPhraseMatch ? -1 : 1;
+      }
+
+      // 4. Closeness in word sum / higher match density
+      if (Math.abs(b.wordDensity - a.wordDensity) > 0.001) {
+        return b.wordDensity - a.wordDensity;
+      }
+
+      // 5. Stable question id ordering
+      return a.question.id - b.question.id;
+    });
+
+    return {
+      query: rawQuery,
+      words: queryWords,
+      results: matches,
+      needsMoreWords: false,
+      totalMatches: matches.length,
+    };
+  }
+
   global.QuizBank = {
     registerCourse,
     listCourses,
@@ -243,5 +405,8 @@
     createSession,
     sessionScore,
     scoreByModule,
+    extractWords,
+    indexCourseQuestions,
+    searchCourse,
   };
 })(window);

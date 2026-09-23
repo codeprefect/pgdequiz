@@ -20,6 +20,9 @@
     countChoice: 50, // 20 | 50 | 60 | 80 | 100 | "all" | "custom"
     customCount: 30, // arbitrary question length in increments of 10
     reviewMode: false,
+    searchQuery: "",
+    searchResults: null,
+    searchDebounceTimer: null,
     // pause state: each session starts with one pause and replenishes after a cooldown
     paused: false,
     pausesUsed: 0,
@@ -114,6 +117,12 @@
     state.course = course;
     state.modules = new Set(QuizBank.getModules(course));
     state.parts = new Set(["A", "B"]);
+    state.searchQuery = "";
+    state.searchResults = null;
+    if (state.searchDebounceTimer) {
+      clearTimeout(state.searchDebounceTimer);
+      state.searchDebounceTimer = null;
+    }
     document.title = `${course.code} — ${course.title}`;
     renderSetup();
   }
@@ -121,6 +130,12 @@
   // ---------------------------------------------------------- course picker
 
   function renderCoursePicker(courses) {
+    state.searchQuery = "";
+    state.searchResults = null;
+    if (state.searchDebounceTimer) {
+      clearTimeout(state.searchDebounceTimer);
+      state.searchDebounceTimer = null;
+    }
     clear(root);
     document.title = "Practice Quiz";
     const list = el("div", { class: "sheet" }, [
@@ -145,6 +160,298 @@
       );
     });
     root.appendChild(list);
+  }
+
+  // -------------------------------------------------------------- search & modal
+
+  function escapeHtml(str) {
+    if (!str) return "";
+    return String(str)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+  }
+
+  function highlightWords(text, words) {
+    if (!text) return "";
+    if (!words || !words.length) return escapeHtml(text);
+    const safeText = escapeHtml(text);
+    const sortedWords = words
+      .slice()
+      .filter((w) => w && w.length > 0)
+      .sort((a, b) => b.length - a.length);
+    if (!sortedWords.length) return safeText;
+    const escaped = sortedWords.map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+    const regex = new RegExp(`\\b(${escaped.join("|")})\\b`, "gi");
+    return safeText.replace(regex, '<mark class="search-highlight">$1</mark>');
+  }
+
+  function showQuestionDetailModal(q) {
+    const existing = document.getElementById("question-detail-modal");
+    if (existing) existing.remove();
+
+    const isSata = q.type === "multi" || q.type === "sata" || (Array.isArray(q.correct) && q.correct.length > 1);
+
+    const backdrop = el("div", {
+      id: "question-detail-modal",
+      class: "search-modal-backdrop",
+      onclick: (e) => {
+        if (e.target === backdrop) closeModal();
+      },
+    });
+
+    const card = el("div", {
+      class: "search-modal-card",
+      role: "dialog",
+      "aria-modal": "true",
+      "aria-labelledby": "modal-prompt-text",
+    });
+
+    function closeModal() {
+      window.removeEventListener("keydown", handleKeyDown);
+      backdrop.remove();
+    }
+
+    function handleKeyDown(e) {
+      if (e.key === "Escape") {
+        closeModal();
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+
+    // Modal Header
+    const header = el("div", { class: "modal-header" });
+    const tags = el("div", { class: "modal-tags" }, [
+      el("span", { class: "modal-tag-course" }, [state.course ? state.course.code : ""]),
+      el("span", { class: "modal-tag-num" }, [`Question #${q.id}`]),
+      el("span", { class: `q-type-tag ${isSata ? "multi" : "single"}` }, [
+        isSata ? "Select all that apply" : "Choose one",
+      ]),
+    ]);
+    const closeBtn = el(
+      "button",
+      {
+        type: "button",
+        class: "modal-close-icon-btn",
+        "aria-label": "Close question details",
+        onclick: closeModal,
+      },
+      ["✕"]
+    );
+    header.appendChild(tags);
+    header.appendChild(closeBtn);
+    card.appendChild(header);
+
+    // Locator
+    card.appendChild(
+      el("div", { class: "modal-locator" }, [
+        el("div", {}, [q.module]),
+        el("div", {}, [q.session]),
+      ])
+    );
+
+    // Prompt
+    card.appendChild(el("p", { class: "modal-prompt", id: "modal-prompt-text" }, [q.prompt]));
+
+    // Options with correct answer highlighted
+    const optionsWrap = el("div", { class: "modal-options" });
+    const correctIds = Array.isArray(q.correct) ? q.correct : [q.correct];
+    (q.options || []).forEach((opt) => {
+      const isCorrect = correctIds.includes(opt.id);
+      const row = el("div", {
+        class: "modal-option" + (isCorrect ? " is-correct" : ""),
+      });
+      row.appendChild(el("span", { class: "modal-mark" }, [opt.id]));
+      row.appendChild(el("span", { class: "modal-text" }, [opt.text]));
+      if (isCorrect) {
+        row.appendChild(el("span", { class: "modal-correct-pill" }, ["✓ Correct Answer"]));
+      }
+      optionsWrap.appendChild(row);
+    });
+    card.appendChild(optionsWrap);
+
+    // Actions
+    const actions = el("div", { class: "modal-actions" }, [
+      el("span", { class: "modal-shortcut-hint" }, ["Press Esc or click outside to return to search"]),
+      el(
+        "button",
+        {
+          type: "button",
+          class: "btn btn-ghost",
+          onclick: closeModal,
+        },
+        ["Close"]
+      ),
+    ]);
+    card.appendChild(actions);
+
+    backdrop.appendChild(card);
+    document.body.appendChild(backdrop);
+    closeBtn.focus();
+  }
+
+  function buildSearchSection(course) {
+    const container = el("div", { class: "field-group search-group" });
+    container.appendChild(el("span", { class: "field-label" }, ["Search Course Questions"]));
+
+    const barWrap = el("div", { class: "search-bar-wrap" });
+    const searchIcon = el("span", { class: "search-icon", "aria-hidden": "true" }, ["🔍"]);
+    const input = el("input", {
+      type: "text",
+      class: "search-input",
+      placeholder: "Search questions (type at least 3 whole words)...",
+      value: state.searchQuery || "",
+      "aria-label": `Search questions in ${course.title}`,
+    });
+
+    const clearBtn = el(
+      "button",
+      {
+        type: "button",
+        class: "search-clear-btn" + (state.searchQuery ? " visible" : ""),
+        "aria-label": "Clear search",
+        onclick: () => {
+          state.searchQuery = "";
+          state.searchResults = null;
+          input.value = "";
+          clearBtn.classList.remove("visible");
+          updateSearchDisplay();
+          input.focus();
+        },
+      },
+      ["✕"]
+    );
+
+    barWrap.appendChild(searchIcon);
+    barWrap.appendChild(input);
+    barWrap.appendChild(clearBtn);
+    container.appendChild(barWrap);
+
+    const hintEl = el("div", { class: "search-hint" });
+    container.appendChild(hintEl);
+
+    const resultsPanel = el("div", { class: "search-results-panel", style: "display: none;" });
+    container.appendChild(resultsPanel);
+
+    function updateSearchDisplay() {
+      clear(resultsPanel);
+      const query = (state.searchQuery || "").trim();
+      const words = QuizBank.extractWords(query);
+
+      if (query.length > 0) {
+        clearBtn.classList.add("visible");
+      } else {
+        clearBtn.classList.remove("visible");
+      }
+
+      if (words.length === 0) {
+        hintEl.textContent = "Search across question prompts and correct answers in this course.";
+        hintEl.className = "search-hint";
+        resultsPanel.style.display = "none";
+        return;
+      }
+
+      // Acceptance Criteria 1: At least three whole words required
+      if (words.length < 3) {
+        hintEl.textContent = `Type at least 3 whole words to search (${words.length} of 3 entered: "${words.join(" ")}")...`;
+        hintEl.className = "search-hint warning";
+        resultsPanel.style.display = "none";
+        return;
+      }
+
+      const searchRes = QuizBank.searchCourse(course, query);
+      state.searchResults = searchRes;
+
+      const total = searchRes.totalMatches;
+      if (total === 0) {
+        hintEl.textContent = `No questions found matching "${words.join(" ")}".`;
+        hintEl.className = "search-hint";
+        resultsPanel.style.display = "none";
+        return;
+      }
+
+      hintEl.textContent = `Found ${total} matching question${total === 1 ? "" : "s"} · Click any question to view full details`;
+      hintEl.className = "search-hint success";
+      resultsPanel.style.display = "block";
+
+      // Show top 50 matches for performance
+      const displayLimit = 50;
+      const matchesToShow = searchRes.results.slice(0, displayLimit);
+
+      if (total > displayLimit) {
+        resultsPanel.appendChild(
+          el("div", { class: "search-results-summary" }, [
+            `Showing top ${displayLimit} of ${total} matching questions:`,
+          ])
+        );
+      }
+
+      matchesToShow.forEach((match) => {
+        const q = match.question;
+        const item = el("div", {
+          class: "search-result-item",
+          tabindex: "0",
+          role: "button",
+          "aria-label": `Question #${q.id}: ${q.prompt}`,
+          onclick: () => {
+            showQuestionDetailModal(q);
+          },
+          onkeydown: (e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              showQuestionDetailModal(q);
+            }
+          },
+        });
+
+        // Meta row
+        const metaRow = el("div", { class: "s-meta" });
+        metaRow.appendChild(el("span", { class: "s-module" }, [`${q.module} · ${q.session}`]));
+
+        const badgeClass = match.isExactSet ? "s-badge s-badge-exact" : "s-badge";
+        const badgeText = match.isExactSet
+          ? `✓ Full match (${match.matchCount}/${words.length} words)`
+          : `${match.matchCount} of ${words.length} words`;
+        metaRow.appendChild(el("span", { class: badgeClass }, [badgeText]));
+        item.appendChild(metaRow);
+
+        // Prompt snippet
+        const promptEl = el("div", {
+          class: "s-prompt",
+          html: highlightWords(q.prompt, match.matchedWords),
+        });
+        item.appendChild(promptEl);
+
+        // Correct answer preview
+        const ansEl = el("div", {
+          class: "s-answer",
+          html: `<span class="s-answer-prefix">✓ Answer:</span> ${highlightWords(match.correctAnswerText, match.matchedWords)}`,
+        });
+        item.appendChild(ansEl);
+
+        resultsPanel.appendChild(item);
+      });
+    }
+
+    // Input event with 100ms debounce
+    input.addEventListener("input", (e) => {
+      state.searchQuery = e.target.value;
+      if (state.searchDebounceTimer) clearTimeout(state.searchDebounceTimer);
+      state.searchDebounceTimer = setTimeout(() => {
+        updateSearchDisplay();
+      }, 100);
+    });
+
+    // Restore results if search was already active
+    if (state.searchQuery && QuizBank.extractWords(state.searchQuery).length >= 3) {
+      updateSearchDisplay();
+    } else {
+      hintEl.textContent = "Search across question prompts and correct answers in this course.";
+    }
+
+    return container;
   }
 
   // -------------------------------------------------------------- setup
@@ -185,6 +492,9 @@
         course.description || "Select a range of questions to practice below.",
       ])
     );
+
+    // Question Search
+    sheet.appendChild(buildSearchSection(course));
 
     // NOTE: module and question-format selection removed per preference
 
@@ -547,9 +857,10 @@
     );
 
     // type tag
+    const isSata = q.type === "multi" || q.type === "sata" || (Array.isArray(q.correct) && q.correct.length > 1);
     sheet.appendChild(
-      el("span", { class: "q-type-tag " + q.type }, [
-        q.type === "single" ? "Choose one" : `Choose ${q.correct.length}`,
+      el("span", { class: "q-type-tag " + (isSata ? "multi" : "single") }, [
+        isSata ? "Select all that apply" : "Choose one",
       ])
     );
 
@@ -832,7 +1143,8 @@
   }
 
   function toggleOption(q, optId) {
-    if (q.type === "single") {
+    const isSingle = q.type === "single" && (!Array.isArray(q.correct) || q.correct.length <= 1);
+    if (isSingle) {
       state.selection = [optId];
     } else {
       const i = state.selection.indexOf(optId);

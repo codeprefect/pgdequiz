@@ -389,7 +389,7 @@ p { line-height: 1.55; color: var(--ink); }
   margin-bottom: 12px;
 }
 .q-type-tag.single { background: #e4e9f2; color: var(--focus); }
-.q-type-tag.multi { background: #f2e9d8; color: var(--gold); }
+.q-type-tag.multi, .q-type-tag.sata { background: #f2e9d8; color: var(--gold); }
 
 .session-banner {
   font-family: var(--font-mono);
@@ -638,4 +638,409 @@ footer.site-foot {
   border-radius: 8px;
   box-shadow: 0 8px 30px rgba(0,0,0,0.35);
   text-align: center;
+}
+
+/* ---------- Question Search & Modal ---------- */
+.search-group {
+  margin-top: 10px;
+  margin-bottom: 24px;
+  padding-bottom: 20px;
+  border-bottom: 1px dashed var(--rule);
+}
+
+.search-bar-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #fffdf7;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  padding: 8px 12px;
+  transition: border-color .15s, box-shadow .15s;
+}
+
+.search-bar-wrap:focus-within {
+  border-color: var(--focus);
+  box-shadow: 0 0 0 2px rgba(63, 111, 176, 0.2);
+}
+
+.search-icon {
+  font-size: 14px;
+  opacity: 0.65;
+  user-select: none;
+}
+
+.search-input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  font-family: var(--font-body);
+  font-size: 14px;
+  color: var(--ink);
+  outline: none;
+  min-width: 0;
+}
+
+.search-input::placeholder {
+  color: var(--ink-soft);
+  opacity: 0.8;
+}
+
+.search-clear-btn {
+  background: none;
+  border: none;
+  color: var(--ink-soft);
+  font-size: 13px;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 3px;
+  display: none;
+  line-height: 1;
+}
+
+.search-clear-btn.visible {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.search-clear-btn:hover {
+  background: rgba(0, 0, 0, 0.07);
+  color: var(--ink);
+}
+
+.search-hint {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--ink-soft);
+  margin-top: 8px;
+  line-height: 1.4;
+}
+
+.search-hint.warning {
+  color: #a05a18;
+}
+
+.search-hint.success {
+  color: var(--correct);
+}
+
+.search-results-panel {
+  margin-top: 12px;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: #fbf8f0;
+  max-height: 380px;
+  overflow-y: auto;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.search-results-summary {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-soft);
+  padding: 8px 14px;
+  background: #f3edd9;
+  border-bottom: 1px solid var(--rule);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.search-result-item {
+  padding: 12px 16px;
+  border-bottom: 1px solid rgba(207, 195, 160, 0.5);
+  cursor: pointer;
+  transition: background-color .12s ease;
+  position: relative;
+}
+
+.search-result-item:last-child {
+  border-bottom: none;
+}
+
+.search-result-item:hover,
+.search-result-item:focus-visible {
+  background-color: #f1ebd8;
+}
+
+.search-result-item:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+
+.s-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.s-module {
+  color: var(--ink-soft);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.s-badge {
+  flex-shrink: 0;
+  background: #eae2cc;
+  color: var(--ink-soft);
+  padding: 2px 7px;
+  border-radius: 10px;
+  font-size: 10.5px;
+}
+
+.s-badge.s-badge-exact {
+  background: var(--correct-bg);
+  color: var(--correct);
+  font-weight: 600;
+}
+
+.s-prompt {
+  font-family: var(--font-display);
+  font-size: 15px;
+  color: var(--ink);
+  line-height: 1.45;
+  margin-bottom: 4px;
+}
+
+.s-answer {
+  font-size: 12.5px;
+  color: var(--correct);
+  line-height: 1.4;
+  margin-top: 4px;
+  background: rgba(228, 239, 228, 0.4);
+  padding: 4px 8px;
+  border-radius: 3px;
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.s-answer-prefix {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  margin-right: 4px;
+}
+
+.search-highlight {
+  background: #ffe38f;
+  color: #1a1a1a;
+  padding: 1px 3px;
+  border-radius: 2px;
+  font-weight: 600;
+}
+
+/* Question Detail Modal */
+.search-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(18, 21, 27, 0.6);
+  backdrop-filter: blur(4px);
+  z-index: 1300;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  animation: fadeInModal 0.15s ease-out;
+}
+
+@keyframes fadeInModal {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.search-modal-card {
+  width: 100%;
+  max-width: 680px;
+  max-height: 90vh;
+  overflow-y: auto;
+  background: var(--paper);
+  border-radius: 4px;
+  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.4), 0 2px 0 rgba(0, 0, 0, 0.1);
+  padding: 30px 32px 26px 54px;
+  position: relative;
+  background-image: linear-gradient(var(--rule) 1px, transparent 1px);
+  background-size: 100% 34px;
+  background-position: 0 110px;
+  background-repeat: repeat-y;
+}
+
+.search-modal-card::before {
+  /* matching red margin rule */
+  content: "";
+  position: absolute;
+  top: 0; bottom: 0; left: 36px;
+  width: 1px;
+  background: var(--margin-red);
+  opacity: 0.55;
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.modal-tags {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.modal-tag-course {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--gold);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.modal-tag-num {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-soft);
+}
+
+.modal-close-icon-btn {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: var(--ink-soft);
+  font-size: 18px;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background-color .12s, color .12s;
+}
+
+.modal-close-icon-btn:hover {
+  background: rgba(0, 0, 0, 0.08);
+  color: var(--ink);
+}
+
+.modal-locator {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--ink-soft);
+  margin-bottom: 12px;
+  line-height: 1.5;
+}
+
+.modal-prompt {
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 500;
+  line-height: 1.45;
+  color: var(--ink);
+  margin: 0 0 20px;
+}
+
+.modal-options {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 22px;
+}
+
+.modal-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px 14px;
+  border: 1px solid #c9bd9c;
+  border-radius: 4px;
+  background: #fffdf7;
+  font-size: 14.5px;
+  line-height: 1.45;
+  position: relative;
+}
+
+.modal-option.is-correct {
+  border-color: var(--correct);
+  background: var(--correct-bg);
+}
+
+.modal-mark {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 3px;
+  border: 1px solid #c9bd9c;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--ink);
+  background: #faf6ea;
+}
+
+.modal-option.is-correct .modal-mark {
+  background: var(--correct);
+  color: #fff;
+  border-color: var(--correct);
+}
+
+.modal-text {
+  flex: 1;
+  color: var(--ink);
+}
+
+.modal-option.is-correct .modal-text {
+  color: var(--correct);
+  font-weight: 500;
+}
+
+.modal-correct-pill {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #fff;
+  background: var(--correct);
+  padding: 3px 8px;
+  border-radius: 999px;
+  align-self: center;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 14px;
+  border-top: 1px solid var(--rule);
+}
+
+.modal-shortcut-hint {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-soft);
+}
+
+@media (max-width: 560px) {
+  .search-modal-card {
+    padding: 22px 18px 20px 34px;
+  }
+  .search-modal-card::before {
+    left: 20px;
+  }
+  .modal-correct-pill {
+    display: none;
+  }
 }
