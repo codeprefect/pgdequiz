@@ -836,7 +836,20 @@
 
     const sheet = el("div", { class: "sheet" });
 
-    // (no breadcrumb here — prevent returning to setup during an active quiz)
+    // Top bar with course badge and option to end session midway
+    const topBar = el("div", { class: "quiz-top-bar" }, [
+      el("span", { class: "quiz-course-code" }, [state.course ? state.course.code : ""]),
+      el(
+        "button",
+        {
+          type: "button",
+          class: "quiz-end-link",
+          onclick: () => promptEndSession(),
+        },
+        ["✕ End session midway"]
+      ),
+    ]);
+    sheet.appendChild(topBar);
 
     // header
     const header = el("div", { class: "quiz-header" });
@@ -945,37 +958,40 @@
 
     // actions
     const actions = el("div", { class: "quiz-actions" });
+
+    // End session action (always available)
+    actions.appendChild(
+      el(
+        "button",
+        {
+          type: "button",
+          class: "btn btn-ghost",
+          onclick: () => promptEndSession(),
+        },
+        ["End session"]
+      )
+    );
+
     if (session.isReview) {
       const isLast = session.index === session.questions.length - 1;
       actions.appendChild(
         el(
           "button",
           {
+            type: "button",
             class: "btn btn-primary",
             onclick: () => (isLast ? finishSession() : nextQuestion()),
           },
-          [isLast ? "See results \u2192" : "Next question \u2192"]
+          [isLast ? "Done reviewing \u2192" : "Next question \u2192"]
         )
       );
     } else {
-      actions.appendChild(
-        el(
-          "button",
-          {
-            class: "btn btn-ghost",
-            onclick: () => {
-              if (confirm("End this session now and see your results so far?")) finishSession();
-            },
-          },
-          ["End session"]
-        )
-      );
-
       if (!state.locked) {
         actions.appendChild(
           el(
             "button",
             {
+              type: "button",
               class: "btn btn-primary",
               disabled: state.selection.length === 0 ? "disabled" : null,
               onclick: () => submitAnswer(q),
@@ -989,6 +1005,7 @@
           el(
             "button",
             {
+              type: "button",
               class: "btn btn-primary",
               onclick: () => (isLast ? finishSession() : nextQuestion()),
             },
@@ -1227,14 +1244,32 @@
     return `${mark}. ${o.text}`;
   }
 
+  function promptEndSession() {
+    const session = state.session;
+    if (!session) return;
+    const isReview = !!session.isReview;
+    const msg = isReview
+      ? "End this review session now and return to course setup?"
+      : "End this session now and see your results so far?";
+    if (confirm(msg)) {
+      finishSession();
+    }
+  }
+
   function finishSession() {
     clearQuestionTimer();
     clearSessionTimer();
     const session = state.session;
+    if (session && session.isReview) {
+      renderSetup();
+      return;
+    }
     const score = QuizBank.sessionScore(session);
     const byModule = QuizBank.scoreByModule(session);
     const pct = score.answered ? Math.round((score.right / score.answered) * 100) : 0;
-    QuizProgress.recordSessionResult(state.course.id, pct);
+    if (score.answered > 0) {
+      QuizProgress.recordSessionResult(state.course.id, pct);
+    }
     renderResults(score, byModule, pct);
   }
 
