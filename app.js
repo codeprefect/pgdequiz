@@ -424,12 +424,26 @@
         });
         item.appendChild(promptEl);
 
-        // Correct answer preview
-        const ansEl = el("div", {
-          class: "s-answer",
-          html: `<span class="s-answer-prefix">✓ Answer:</span> ${highlightWords(match.correctAnswerText, match.matchedWords)}`,
+        // Options list showing both incorrect and correct options, with correct highlighted
+        const optsContainer = el("div", { class: "s-options" });
+        const correctIds = Array.isArray(q.correct) ? q.correct : [q.correct];
+        (q.options || []).forEach((opt) => {
+          const isCorrect = correctIds.includes(opt.id);
+          const optRow = el("div", {
+            class: "s-option" + (isCorrect ? " is-correct" : ""),
+          });
+          optRow.appendChild(el("span", { class: "s-opt-mark" }, [opt.id]));
+          const textEl = el("span", {
+            class: "s-opt-text",
+            html: highlightWords(opt.text, match.matchedWords),
+          });
+          optRow.appendChild(textEl);
+          if (isCorrect) {
+            optRow.appendChild(el("span", { class: "s-opt-badge" }, ["✓ Correct"]));
+          }
+          optsContainer.appendChild(optRow);
         });
-        item.appendChild(ansEl);
+        item.appendChild(optsContainer);
 
         resultsPanel.appendChild(item);
       });
@@ -778,7 +792,7 @@
     const recent = QuizProgress.getRecentQuestionIds ? QuizProgress.getRecentQuestionIds(state.course.id, 200) : [];
     state.session = QuizBank.createSession(pool, {
       shuffle: opts.isReview ? true : state.shuffleOn,
-      shuffleOptions: state.shuffleOptions,
+      shuffleOptions: opts.isReview ? false : state.shuffleOptions,
       limit,
       recentIds: recent,
     });
@@ -883,38 +897,26 @@
 
     sheet.appendChild(el("p", { class: "q-prompt" }, [q.prompt]));
 
-    // Review mode: show correct answer(s) prominently and disable selection
-    if (session.isReview) {
-      sheet.appendChild(
-        el("div", { class: "review-correct-block" }, [
-          el("span", { class: "field-label" }, ["Review mode"]),
-          el(
-            "p",
-            { class: "review-correct" },
-            ["Correct answer: " + q.correct.map((id) => optionText(q, id)).join(" | ")]
-          ),
-        ])
-      );
-    }
-
     // options (render in session-specific shuffled order)
     const optWrap = el("div", { class: "options" });
     const order = (session.optionOrder && session.optionOrder[String(q.id)]) || q.options.map((o) => o.id);
     order.forEach((optId, index) => {
       const opt = q.options.find((o) => o.id === optId);
       if (!opt) return;
-      // In review mode hide incorrect options
-      if (session.isReview && !q.correct.includes(opt.id)) return;
       const isSelected = state.selection.includes(opt.id);
       const classes = ["option"];
       if (isSelected) classes.push("selected");
+      const isCorrectOpt = q.correct.includes(opt.id);
       if (state.locked) {
         classes.push("locked");
-        const isCorrectOpt = q.correct.includes(opt.id);
         if (isCorrectOpt) classes.push("reveal-correct");
         else if (isSelected) classes.push("reveal-wrong");
       }
       const displayMark = session.isReview ? opt.id : String.fromCharCode(65 + index);
+      const children = [el("span", { class: "mark" }, [displayMark]), el("span", { style: "flex: 1;" }, [opt.text])];
+      if (session.isReview && isCorrectOpt) {
+        children.push(el("span", { class: "modal-correct-pill", style: "margin-left: auto;" }, ["✓ Correct Answer"]));
+      }
       optWrap.appendChild(
         el(
           "button",
@@ -925,7 +927,7 @@
               toggleOption(q, opt.id);
             },
           },
-          [el("span", { class: "mark" }, [displayMark]), el("span", {}, [opt.text])]
+          children
         )
       );
     });
